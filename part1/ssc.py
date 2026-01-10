@@ -5,6 +5,7 @@ Implements frame type detection for AAC encoding based on signal transient analy
 """
 
 import numpy as np
+import scipy.signal
 
 from .types import FrameType
 
@@ -53,13 +54,12 @@ def SSC(
     left_has_transient = _detect_transient_single_channel(filtered_next, channel=0)
     right_has_transient = _detect_transient_single_channel(filtered_next, channel=1)
 
-    # Step 3: Combine channel decisions using Table 1 logic
-    next_is_eight_short = _combine_channel_decisions(
-        left_has_transient, right_has_transient
-    )
+    # Step 3: Apply state machine to each channel separately
+    left_frame_type = _apply_state_machine(prev_frame_type, left_has_transient)
+    right_frame_type = _apply_state_machine(prev_frame_type, right_has_transient)
 
-    # Step 4: Apply state machine to determine current frame type
-    frame_type = _apply_state_machine(prev_frame_type, next_is_eight_short)
+    # Step 4: Combine per-channel frame types to get final frame type
+    frame_type = _combine_channel_decisions(left_frame_type, right_frame_type)
 
     return frame_type
 
@@ -84,7 +84,12 @@ def _filter_next_frame(frame: np.ndarray) -> np.ndarray:
     -----
     Use scipy.signal.lfilter for implementation
     """
-    raise NotImplementedError()
+    return scipy.signal.lfilter(
+        b=[0.7548, -0.7548],
+        a=[1, -0.5095],
+        x=frame,
+        axis=0,
+    )
 
 
 def _compute_segment_energies(filtered_frame: np.ndarray, channel: int) -> np.ndarray:
@@ -104,7 +109,13 @@ def _compute_segment_energies(filtered_frame: np.ndarray, channel: int) -> np.nd
         Energy values for 8 segments, shape (8,)
         s2[l] = sum(segment[l]^2) for l = 0..7
     """
-    raise NotImplementedError()
+    s2 = np.zeros(8)
+    for section in range(8):
+        segment = filtered_frame[
+            448 + section * 128 : 448 + (section + 1) * 128, channel
+        ]
+        s2[section] = np.sum(segment**2)
+    return s2
 
 
 def _compute_attack_values(s2: np.ndarray) -> np.ndarray:
@@ -125,7 +136,15 @@ def _compute_attack_values(s2: np.ndarray) -> np.ndarray:
         ds2[l] = s2[l] / mean(s2[0:l]) for l = 1..7
         ds2[0] = 0 (no previous segments)
     """
-    raise NotImplementedError()
+    # set first attack value to 0 (no previous segments)
+    ds2 = np.zeros(8)
+    for seg in range(1, 8):
+        mean_prev = np.mean(s2[0:seg])
+        if mean_prev > 0:
+            ds2[seg] = s2[seg] / mean_prev
+        else:
+            ds2[seg] = 0.0  # Avoid division by zero
+    return ds2
 
 
 def _is_transient_segment(s2_l: float, ds2_l: float) -> bool:
@@ -144,7 +163,7 @@ def _is_transient_segment(s2_l: float, ds2_l: float) -> bool:
     is_transient : bool
         True if s2_l > 10^-3 AND ds2_l > 10
     """
-    raise NotImplementedError()
+    return (s2_l > 1e-3) and (ds2_l > 10)
 
 
 def _detect_transient_single_channel(filtered_frame: np.ndarray, channel: int) -> bool:
@@ -175,31 +194,41 @@ def _detect_transient_single_channel(filtered_frame: np.ndarray, channel: int) -
     )  # Start from 1, not 0 (need previous segments for attack)
 
 
-def _combine_channel_decisions(left_transient: bool, right_transient: bool) -> bool:
+def _combine_channel_decisions(
+    left_frame_type: FrameType, right_frame_type: FrameType
+) -> FrameType:
     """
-    Combine left and right channel transient decisions using Table 1 logic.
+    Combine left and right channel frame type decisions.
 
     Parameters
     ----------
-    left_transient : bool
-        Transient detected in left channel
-    right_transient : bool
-        Transient detected in right channel
+    left_frame_type : FrameType
+        Frame type determined for left channel
+    right_frame_type : FrameType
+        Frame type determined for right channel
 
     Returns
     -------
-    combined : bool
-        True if frame should be EIGHT_SHORT_SEQUENCE
+    frame_type : FrameType
+        Combined frame type for the whole frame
 
     Notes
     -----
-    According to Table 1: if either channel detects transient, use ESH
+    Priority order (most restrictive wins):
+    ESH > LSS > LPS > OLS
+
+    This ensures transients are captured if either channel detects them.
     """
-    raise NotImplementedError()
+    priority = {"ESH": 0, "LSS": 1, "LPS": 2, "OLS": 3}
+
+    if priority[left_frame_type] <= priority[right_frame_type]:
+        return left_frame_type
+    else:
+        return right_frame_type
 
 
 def _apply_state_machine(
-    prev_frame_type: FrameType, next_is_eight_short: bool
+    prev_frame_type: FrameType, next_has_transient: bool
 ) -> FrameType:
     """
     Apply state machine logic to determine current frame type.
@@ -208,12 +237,29 @@ def _apply_state_machine(
     ----------
     prev_frame_type : FrameType
         Previous frame type
-    next_is_eight_short : bool
-        Whether next frame will be EIGHT_SHORT
+    next_has_transient : bool
+        Whether next frame has transient detected
 
     Returns
     -------
     frame_type : FrameType
         Current frame type based on state machine rules
+
+    Notes
+    -----
+    State transitions:
+    - OLS → LSS if transient, else OLS
+    - LSS → ESH (forced)
+    - ESH → ESH if transient, else LPS
+    - LPS → OLS (forced)
     """
-    raise NotImplementedError()
+    if prev_frame_type == "OLS":
+        return "LSS" if next_has_transient else "OLS"
+    elif prev_frame_type == "LSS":
+        return "ESH"
+    elif prev_frame_type == "ESH":
+        return "ESH" if next_has_transient else "LPS"
+    elif prev_frame_type == "LPS":
+        return "OLS"
+    else:
+        raise ValueError(f"Invalid frame type: {prev_frame_type}")

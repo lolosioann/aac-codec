@@ -7,6 +7,7 @@ Implements the complete encoding and decoding pipeline for Part 1.
 from typing import Any
 
 import numpy as np
+import soundfile as sf
 
 from .filterbank import WindowType, filter_bank, i_filter_bank
 from .ssc import SSC, FrameType
@@ -141,7 +142,14 @@ def _read_wav_file(filename: str) -> tuple[np.ndarray, int]:
     -----
     Use soundfile library: sf.read(filename)
     """
-    raise NotImplementedError()
+    if not filename.endswith(".wav"):
+        raise ValueError("Input file must be a WAV file with .wav extension.")
+
+    with sf.SoundFile(filename) as f:
+        sample_rate = f.samplerate
+        samples = f.read(dtype="float32")
+
+    return samples, sample_rate
 
 
 def _write_wav_file(filename: str, samples: np.ndarray, sample_rate: int) -> None:
@@ -161,7 +169,10 @@ def _write_wav_file(filename: str, samples: np.ndarray, sample_rate: int) -> Non
     -----
     Use soundfile library: sf.write(filename, samples, sample_rate)
     """
-    raise NotImplementedError()
+    if not filename.endswith(".wav"):
+        raise ValueError("Output file must be a WAV file with .wav extension.")
+
+    sf.write(filename, samples, sample_rate)
 
 
 def _split_into_frames(
@@ -188,7 +199,17 @@ def _split_into_frames(
     -----
     May need to zero-pad the last frame if not enough samples remain
     """
-    raise NotImplementedError()
+    frames = []
+    num_samples = samples.shape[0]
+    for start in range(0, num_samples, hop_size):
+        end = start + frame_size if start + frame_size <= num_samples else num_samples
+        frame = samples[start:end]
+        if frame.shape[0] < frame_size:
+            # Zero-pad last frame if needed
+            pad_width = frame_size - frame.shape[0]
+            frame = np.pad(frame, ((0, pad_width), (0, 0)), mode="constant")
+        frames.append(frame)
+    return frames
 
 
 def _overlap_add(frames: list[np.ndarray], hop_size: int) -> np.ndarray:
@@ -212,7 +233,16 @@ def _overlap_add(frames: list[np.ndarray], hop_size: int) -> np.ndarray:
     Overlapping regions are summed together. This works correctly
     with MDCT windows that satisfy the Princen-Bradley condition.
     """
-    raise NotImplementedError()
+    frame_size = frames[0].shape[0]
+    num_samples = hop_size * (len(frames) - 1) + frame_size
+    samples = np.zeros((num_samples, 2))
+
+    for i, frame in enumerate(frames):
+        start = i * hop_size
+        end = start + frame_size
+        samples[start:end] += frame
+
+    return samples
 
 
 def _encode_frame(
@@ -293,25 +323,6 @@ def _decode_frame(encoded_frame: dict[str, Any]) -> np.ndarray:
     return frame_T
 
 
-def _pad_samples(samples: np.ndarray, target_length: int) -> np.ndarray:
-    """
-    Zero-pad samples to target length.
-
-    Parameters
-    ----------
-    samples : np.ndarray
-        Input samples, shape (num_samples, num_channels)
-    target_length : int
-        Desired length
-
-    Returns
-    -------
-    padded : np.ndarray
-        Padded samples, shape (target_length, num_channels)
-    """
-    raise NotImplementedError()
-
-
 def _get_default_window_type() -> WindowType:
     """
     Get the default window type for Part 1.
@@ -326,4 +337,4 @@ def _get_default_window_type() -> WindowType:
     Part 1 assumes consistent window type throughout encoding.
     Can be modified to support dynamic switching in later parts.
     """
-    raise NotImplementedError()
+    return "KBD"

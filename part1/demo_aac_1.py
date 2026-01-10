@@ -110,7 +110,14 @@ def _compute_snr(original: np.ndarray, decoded: np.ndarray) -> float:
     - Handle edge case where error is zero (infinite SNR)
     - Compute across all channels
     """
-    raise NotImplementedError()
+    signal_power = np.sum(original**2)
+    noise = original - decoded
+    noise_power = np.sum(noise**2)
+
+    if noise_power < np.finfo(float).eps:
+        return np.inf
+
+    return 10 * np.log10(signal_power / noise_power)
 
 
 def _compute_snr_per_channel(original: np.ndarray, decoded: np.ndarray) -> np.ndarray:
@@ -129,7 +136,15 @@ def _compute_snr_per_channel(original: np.ndarray, decoded: np.ndarray) -> np.nd
     snr_per_channel : np.ndarray
         SNR in dB for each channel, shape (num_channels,)
     """
-    raise NotImplementedError()
+    num_channels = original.shape[1]
+    snr_per_channel = np.zeros(num_channels)
+
+    for ch in range(num_channels):
+        snr_per_channel[ch] = _compute_snr(
+            original[:, ch : ch + 1], decoded[:, ch : ch + 1]
+        )
+
+    return snr_per_channel
 
 
 def _align_signals(
@@ -156,7 +171,8 @@ def _align_signals(
     -----
     Takes minimum length and trims both to match
     """
-    raise NotImplementedError()
+    min_len = min(original.shape[0], decoded.shape[0])
+    return original[:min_len], decoded[:min_len]
 
 
 def _print_encoding_stats(aac_seq: list) -> None:
@@ -239,4 +255,24 @@ def _compute_coefficient_statistics(aac_seq: list) -> dict:
         - "min_coefficient": float
         - "std_deviation": float
     """
-    raise NotImplementedError()
+    all_coeffs = []
+
+    for frame in aac_seq:
+        # Collect coefficients from both channels
+        all_coeffs.append(frame["chl"]["frame_F"].flatten())
+        all_coeffs.append(frame["chr"]["frame_F"].flatten())
+
+    all_coeffs = np.concatenate(all_coeffs)
+
+    return {
+        "mean_magnitude": np.mean(np.abs(all_coeffs)),
+        "max_coefficient": np.max(all_coeffs),
+        "min_coefficient": np.min(all_coeffs),
+        "std_deviation": np.std(all_coeffs),
+    }
+
+
+if __name__ == "__main__":
+    input_file = "input_stereo_48kHz.wav"
+    output_file = "decoded_output.wav"
+    demo_aac_1(input_file, output_file)

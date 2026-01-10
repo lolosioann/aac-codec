@@ -21,7 +21,7 @@ def stereo_silence() -> np.ndarray:
     frame : np.ndarray
         Silent frame, shape (2048, 2)
     """
-    raise NotImplementedError()
+    return np.zeros((2048, 2))
 
 
 @pytest.fixture
@@ -34,7 +34,9 @@ def stereo_sine_wave() -> np.ndarray:
     frame : np.ndarray
         Sine wave frame, shape (2048, 2)
     """
-    raise NotImplementedError()
+    t = np.arange(2048) / SAMPLE_RATE
+    sine = 0.5 * np.sin(2 * np.pi * 440 * t)
+    return np.column_stack([sine, sine])
 
 
 @pytest.fixture
@@ -47,7 +49,9 @@ def stereo_impulse() -> np.ndarray:
     frame : np.ndarray
         Impulse at center, shape (2048, 2)
     """
-    raise NotImplementedError()
+    frame = np.zeros((2048, 2))
+    frame[1024, :] = 1.0
+    return frame
 
 
 @pytest.fixture
@@ -60,7 +64,8 @@ def stereo_noise() -> np.ndarray:
     frame : np.ndarray
         White noise frame, shape (2048, 2)
     """
-    raise NotImplementedError()
+    rng = np.random.default_rng(42)
+    return rng.uniform(-1.0, 1.0, (2048, 2))
 
 
 @pytest.fixture
@@ -213,7 +218,7 @@ def assert_arrays_close(
     AssertionError
         If arrays are not close
     """
-    raise NotImplementedError()
+    np.testing.assert_allclose(actual, expected, rtol=rtol, atol=atol)
 
 
 def compute_reconstruction_error(
