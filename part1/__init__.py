@@ -9,10 +9,10 @@ This module implements the foundational components of an AAC audio codec:
 
 from . import constants
 from .aac_coder_1 import aac_coder_1, i_aac_coder_1
+from .aac_types import ChannelData, EncodedFrame, FrameType, WindowType
 from .demo_aac_1 import demo_aac_1
 from .filterbank import filter_bank, i_filter_bank
 from .ssc import SSC
-from .types import ChannelData, EncodedFrame, FrameType, WindowType
 
 __all__ = [
     # Main functions

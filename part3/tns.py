@@ -8,7 +8,7 @@ improving coding efficiency for transient signals.
 import numpy as np
 from numpy.typing import NDArray
 
-from .types import FrameType
+from .aac_types import FrameType
 
 
 def tns(

@@ -9,13 +9,7 @@ This module implements the complete AAC encoder/decoder including:
 """
 
 from .aac_coder_3 import aac_coder_3, i_aac_coder_3
-from .demo_aac_3 import demo_aac_3
-from .filterbank import filter_bank, i_filter_bank
-from .psychoacoustic import psycho
-from .quantizer import aac_quantizer, i_aac_quantizer
-from .ssc import SSC
-from .tns import i_tns, tns
-from .types import (
+from .aac_types import (
     ChannelData3,
     EncodedFrame3,
     FrameType,
@@ -26,6 +20,12 @@ from .types import (
     ThresholdArray,
     WindowType,
 )
+from .demo_aac_3 import demo_aac_3
+from .filterbank import filter_bank, i_filter_bank
+from .psychoacoustic import psycho
+from .quantizer import aac_quantizer, i_aac_quantizer
+from .ssc import SSC
+from .tns import i_tns, tns
 
 __all__ = [
     "SSC",

@@ -273,6 +273,6 @@ def _compute_coefficient_statistics(aac_seq: list) -> dict:
 
 
 if __name__ == "__main__":
-    input_file = "input_stereo_48kHz.wav"
-    output_file = "decoded_output.wav"
+    input_file = "part1/input_stereo_38kHz.wav"
+    output_file = "part1/decoded_output.wav"
     demo_aac_1(input_file, output_file)

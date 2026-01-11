@@ -8,7 +8,7 @@ scalefactors to control quantization noise below masking thresholds.
 import numpy as np
 from numpy.typing import NDArray
 
-from .types import FrameType
+from .aac_types import FrameType
 
 
 def aac_quantizer(

@@ -6,7 +6,7 @@ Implements frame type detection for AAC encoding based on signal transient analy
 
 import numpy as np
 
-from .types import FrameType
+from .aac_types import FrameType
 
 
 def SSC(

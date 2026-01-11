@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from .types import EncodedFrame3
+from .aac_types import EncodedFrame3
 
 
 def aac_coder_3(filename_in: str, filename_aac_coded: str) -> list[EncodedFrame3]:

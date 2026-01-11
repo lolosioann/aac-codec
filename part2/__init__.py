@@ -5,11 +5,11 @@ This module extends Part 1 with TNS processing for improved temporal noise shapi
 """
 
 from .aac_coder_2 import aac_coder_2, i_aac_coder_2
+from .aac_types import ChannelData2, EncodedFrame2, FrameType, WindowType
 from .demo_aac_2 import demo_aac_2
 from .filterbank import filter_bank, i_filter_bank
 from .ssc import SSC
 from .tns import i_tns, tns
-from .types import ChannelData2, EncodedFrame2, FrameType, WindowType
 
 __all__ = [
     "SSC",
