@@ -8,8 +8,9 @@ for AAC audio encoding/decoding.
 from typing import Literal
 
 import numpy as np
+import scipy.signal.windows
 
-from .ssc import FrameType
+from .aac_types import FrameType
 
 WindowType = Literal["KBD", "SIN"]
 
@@ -153,7 +154,25 @@ def _create_window(N: int, win_type: WindowType, frame_type: FrameType) -> np.nd
     - ESH: symmetric short window
     - LPS: zeros + left half of short + flat + right half of long
     """
-    raise NotImplementedError()
+    # Select base window function
+    create_fn = _create_kbd_window if win_type == "KBD" else _create_sin_window
+
+    # OLS and ESH use symmetric windows
+    if frame_type == "OLS" or frame_type == "ESH":
+        return create_fn(N)
+
+    # LSS and LPS need both long and short windows
+    from .constants import FRAME_SIZE, SHORT_FRAME_SIZE
+
+    win_long = create_fn(FRAME_SIZE)
+    win_short = create_fn(SHORT_FRAME_SIZE)
+
+    if frame_type == "LSS":
+        return _create_long_start_window(win_long, win_short)
+    elif frame_type == "LPS":
+        return _create_long_stop_window(win_long, win_short)
+    else:
+        raise ValueError(f"Invalid frame type: {frame_type}")
 
 
 def _create_kbd_window(N: int) -> np.ndarray:
@@ -183,7 +202,30 @@ def _create_kbd_window(N: int) -> np.ndarray:
 
     where w[n] is Kaiser window: use scipy.signal.windows.kaiser
     """
-    raise NotImplementedError()
+    # Select alpha based on window size
+    alpha = 6.0 if N == 2048 else 4.0
+
+    # Create Kaiser window of length N/2 + 1
+    # beta = pi * alpha for scipy's kaiser
+    beta = np.pi * alpha
+    kaiser = scipy.signal.windows.kaiser(N // 2 + 1, beta)
+
+    # Compute cumulative sum
+    cumsum = np.cumsum(kaiser)
+
+    # Normalize by total sum
+    total = cumsum[-1]
+
+    # Build KBD window
+    window = np.zeros(N)
+
+    # Left half: W[n] = sqrt(cumsum[n+1] / total)
+    window[: N // 2] = np.sqrt(cumsum[:-1] / total)
+
+    # Right half: symmetric (time-reversed left half)
+    window[N // 2 :] = window[: N // 2][::-1]
+
+    return window
 
 
 def _create_sin_window(N: int) -> np.ndarray:
@@ -204,7 +246,8 @@ def _create_sin_window(N: int) -> np.ndarray:
     -------
     W[n] = sin(π/N * (n + 0.5)) for n = 0..N-1
     """
-    raise NotImplementedError()
+    n = np.arange(N)
+    return np.sin(np.pi / N * (n + 0.5))
 
 
 def _create_long_start_window(
@@ -231,7 +274,14 @@ def _create_long_start_window(
     window : np.ndarray
         LSS window, shape (2048,)
     """
-    raise NotImplementedError()
+    return np.concatenate(
+        [
+            win_long[:1024],  # Left half of long window
+            np.ones(448),  # Flat portion
+            win_short[128:],  # Right half of short window
+            np.zeros(448),  # Zero portion
+        ]
+    )
 
 
 def _create_long_stop_window(win_long: np.ndarray, win_short: np.ndarray) -> np.ndarray:
@@ -256,7 +306,14 @@ def _create_long_stop_window(win_long: np.ndarray, win_short: np.ndarray) -> np.
     window : np.ndarray
         LPS window, shape (2048,)
     """
-    raise NotImplementedError()
+    return np.concatenate(
+        [
+            np.zeros(448),  # Zero portion
+            win_short[:128],  # Left half of short window
+            np.ones(448),  # Flat portion
+            win_long[1024:],  # Right half of long window
+        ]
+    )
 
 
 def _mdct(x: np.ndarray, N: int) -> np.ndarray:
@@ -281,7 +338,19 @@ def _mdct(x: np.ndarray, N: int) -> np.ndarray:
     for k = 0..N/2-1, n = 0..N-1
     where n0 = (N/2 + 1) / 2
     """
-    raise NotImplementedError()
+    n0 = (N / 2 + 1) / 2
+    n = np.arange(N)
+    k = np.arange(N // 2)
+
+    # Build cosine matrix: cos(2π/N * (n + n0) * (k + 0.5))
+    # Shape: (N, N/2) where [n, k] = cos(...)
+    cos_matrix = np.cos(2 * np.pi / N * np.outer(n + n0, k + 0.5))
+
+    # X[k] = sum over n of x[n] * cos_matrix[n, k]
+    # No scaling here - scaling is done in IMDCT for proper reconstruction
+    X = x @ cos_matrix
+
+    return X
 
 
 def _imdct(X: np.ndarray, N: int) -> np.ndarray:
@@ -306,7 +375,19 @@ def _imdct(X: np.ndarray, N: int) -> np.ndarray:
     for n = 0..N-1, k = 0..N/2-1
     where n0 = (N/2 + 1) / 2
     """
-    raise NotImplementedError()
+    n0 = (N / 2 + 1) / 2
+    n = np.arange(N)
+    k = np.arange(N // 2)
+
+    # Build cosine matrix: cos(2π/N * (n + n0) * (k + 0.5))
+    # Shape: (N, N/2) where [n, k] = cos(...)
+    cos_matrix = np.cos(2 * np.pi / N * np.outer(n + n0, k + 0.5))
+
+    # x[n] = sum over k of X[k] * cos_matrix[n, k]
+    # Scale by 4/N for proper reconstruction with double windowing
+    x = (4 / N) * (cos_matrix @ X)
+
+    return x
 
 
 def _apply_window(samples: np.ndarray, window: np.ndarray) -> np.ndarray:
@@ -325,7 +406,7 @@ def _apply_window(samples: np.ndarray, window: np.ndarray) -> np.ndarray:
     windowed : np.ndarray
         Windowed samples
     """
-    raise NotImplementedError()
+    return samples * window
 
 
 def _process_long_frame(

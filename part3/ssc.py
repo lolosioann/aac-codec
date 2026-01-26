@@ -5,6 +5,7 @@ Implements frame type detection for AAC encoding based on signal transient analy
 """
 
 import numpy as np
+import scipy.signal
 
 from .aac_types import FrameType
 
@@ -84,7 +85,12 @@ def _filter_next_frame(frame: np.ndarray) -> np.ndarray:
     -----
     Use scipy.signal.lfilter for implementation
     """
-    raise NotImplementedError()
+    return scipy.signal.lfilter(
+        b=[0.7548, -0.7548],
+        a=[1, -0.5095],
+        x=frame,
+        axis=0,
+    )
 
 
 def _compute_segment_energies(filtered_frame: np.ndarray, channel: int) -> np.ndarray:
@@ -104,7 +110,13 @@ def _compute_segment_energies(filtered_frame: np.ndarray, channel: int) -> np.nd
         Energy values for 8 segments, shape (8,)
         s2[l] = sum(segment[l]^2) for l = 0..7
     """
-    raise NotImplementedError()
+    s2 = np.zeros(8)
+    for section in range(8):
+        segment = filtered_frame[
+            448 + section * 128 : 448 + (section + 1) * 128, channel
+        ]
+        s2[section] = np.sum(segment**2)
+    return s2
 
 
 def _compute_attack_values(s2: np.ndarray) -> np.ndarray:
@@ -125,7 +137,14 @@ def _compute_attack_values(s2: np.ndarray) -> np.ndarray:
         ds2[l] = s2[l] / mean(s2[0:l]) for l = 1..7
         ds2[0] = 0 (no previous segments)
     """
-    raise NotImplementedError()
+    ds2 = np.zeros(8)
+    for seg in range(1, 8):
+        mean_prev = np.mean(s2[0:seg])
+        if mean_prev > 0:
+            ds2[seg] = s2[seg] / mean_prev
+        else:
+            ds2[seg] = 0.0
+    return ds2
 
 
 def _is_transient_segment(s2_l: float, ds2_l: float) -> bool:
@@ -144,7 +163,7 @@ def _is_transient_segment(s2_l: float, ds2_l: float) -> bool:
     is_transient : bool
         True if s2_l > 10^-3 AND ds2_l > 10
     """
-    raise NotImplementedError()
+    return (s2_l > 1e-3) and (ds2_l > 10)
 
 
 def _detect_transient_single_channel(filtered_frame: np.ndarray, channel: int) -> bool:
@@ -170,9 +189,7 @@ def _detect_transient_single_channel(filtered_frame: np.ndarray, channel: int) -
     ds2 = _compute_attack_values(s2)
 
     # Step 3: Check if any segment l=1..7 satisfies transient conditions
-    return any(
-        _is_transient_segment(s2[idx], ds2[idx]) for idx in range(1, 8)
-    )  # Start from 1, not 0 (need previous segments for attack)
+    return any(_is_transient_segment(s2[idx], ds2[idx]) for idx in range(1, 8))
 
 
 def _combine_channel_decisions(left_transient: bool, right_transient: bool) -> bool:
@@ -195,7 +212,7 @@ def _combine_channel_decisions(left_transient: bool, right_transient: bool) -> b
     -----
     According to Table 1: if either channel detects transient, use ESH
     """
-    raise NotImplementedError()
+    return left_transient or right_transient
 
 
 def _apply_state_machine(
@@ -216,4 +233,13 @@ def _apply_state_machine(
     frame_type : FrameType
         Current frame type based on state machine rules
     """
-    raise NotImplementedError()
+    if prev_frame_type == "OLS":
+        return "LSS" if next_is_eight_short else "OLS"
+    elif prev_frame_type == "LSS":
+        return "ESH"
+    elif prev_frame_type == "ESH":
+        return "ESH" if next_is_eight_short else "LPS"
+    elif prev_frame_type == "LPS":
+        return "OLS"
+    else:
+        raise ValueError(f"Invalid frame type: {prev_frame_type}")
